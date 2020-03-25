@@ -14,19 +14,30 @@ struct worker_t {
     // prod only
     uint32_t start_n;
     uint32_t n;
+    uint32_t push_len;
 
     // cons only
     uint32_t sum;
+    uint32_t pop_len;
 };
 
 void* produce(void* arg) {
     struct worker_t *ctx = arg;
 
     uint32_t end = ctx->start_n + ctx->n;
-    for (uint32_t i = ctx->start_n; i < end; ++i) {
-        //printf("%i\n", i);
-        if (lckfree_queue__push(ctx->q, i)) {
+    uint32_t block[ctx->push_len];
+    for (uint32_t i = ctx->start_n; i < end;) {
+        uint32_t len = 0;
+        for (; len < ctx->push_len && len+i < end; ++len) {
+            block[len] = i + len;
+        }
+
+        uint32_t ret = lckfree_queue__push(ctx->q, block, len, LCKFREE_SOME);
+        if (ret == 0) {
             printf("PUSH FAILED\n");
+        }
+        else {
+            i += ret;
         }
     }
 
@@ -37,24 +48,33 @@ void* consume(void* arg) {
     struct worker_t *ctx = arg;
 
     while (1) {
-        uint32_t i = 0;
-        if (lckfree_queue__pop(ctx->q, &i) == 0)
-            ctx->sum += i;
-        else if (exit_now)
+        uint32_t block[ctx->pop_len];
+        uint32_t ret = lckfree_queue__pop(ctx->q, block, ctx->pop_len, LCKFREE_SOME);
+        if (ret > 0) {
+            for (uint32_t i = 0; i < ret; ++i) {
+                ctx->sum += block[i];
+            }
+        }
+        else if (exit_now) {
             break;
+        }
     }
 
     return NULL;
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 4)
+    _dbg_warn("Mutex enabled!");
+    if (argc != 6)
         return -1;
 
     struct lckfree_queue q;
     int queue_sz = atoi(argv[1]);
     int prod_cnt = atoi(argv[2]);
     int cons_cnt = atoi(argv[3]);
+
+    int push_len = atoi(argv[4]);
+    int pop_len  = atoi(argv[5]);
 
     if (queue_sz < 0 || prod_cnt <= 0 || cons_cnt < 0)
         return -2;
@@ -72,9 +92,10 @@ int main(int argc, char *argv[]) {
         producers[i].q = &q;
         producers[i].start_n = i * (queue_sz / prod_cnt) + ((i==0) ? 1 : 0);
         producers[i].n = (queue_sz / prod_cnt) - ((i==0) ? 1 : 0);
+        producers[i].push_len = push_len;
 
-        printf("Producer n=%u starting from %u\n",
-                producers[i].n , producers[i].start_n);
+        printf("Producer n=%u starting from %u, block of len %u\n",
+                producers[i].n , producers[i].start_n, producers[i].push_len);
 
         pthread_create(&(producers[i].tid), NULL, produce, &producers[i]);
     }
@@ -82,7 +103,9 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < cons_cnt; ++i) {
         consumers[i].q = &q;
         consumers[i].sum = 0;
+        consumers[i].pop_len = pop_len;
 
+        printf("Consumer, block of len %u\n", consumers[i].pop_len);
         pthread_create(&(consumers[i].tid), NULL, consume, &consumers[i]);
     }
 

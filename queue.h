@@ -12,6 +12,8 @@
 #define _dbg_mutex_lock(name) pthread_mutex_lock((name))
 #define _dbg_mutex_unlock(name) pthread_mutex_unlock((name))
 
+#define _dbg_warn(txt) fprintf(stderr, "%s\n", (txt))
+
 #else
 
 #define _dbg_mutex_var(name)
@@ -20,7 +22,11 @@
 #define _dbg_mutex_lock(name)
 #define _dbg_mutex_unlock(name)
 
+#define _dbg_warn(txt)
+
 #endif
+
+#define LCKFREE_SOME 1
 
 //
 // Multi Producer - Multi Consumer Bounded Queue
@@ -88,8 +94,18 @@ struct lckfree_queue {
     uint32_t *data;
 };
 
-int lckfree_queue__push(struct lckfree_queue *q, uint32_t datum);
-int lckfree_queue__pop(struct lckfree_queue *q, uint32_t *datum);
+uint32_t lckfree_queue__push(
+        struct lckfree_queue *q,
+        uint32_t *data,
+        uint32_t len,
+        int flags
+        );
+uint32_t lckfree_queue__pop(
+        struct lckfree_queue *q,
+        uint32_t *data,
+        uint32_t len,
+        int flags
+        );
 
 int lckfree_queue__init(struct lckfree_queue *q, uint32_t sz);
 void lckfree_queue__destroy(struct lckfree_queue *q);

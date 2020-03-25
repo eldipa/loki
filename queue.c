@@ -22,7 +22,12 @@ static void lckfree_cpu_relax() {
 // http://locklessinc.com/articles/locks/
 // https://www.usenix.org/legacy/publications/library/proceedings/als00/2000papers/papers/full_papers/sears/sears_html/index.html
 
-int lckfree_queue__push(struct lckfree_queue *q, uint32_t datum) {
+uint32_t lckfree_queue__push(
+        struct lckfree_queue *q,
+        uint32_t *data,
+        uint32_t len,
+        int flags
+        ) {
     _dbg_mutex_lock(&q->mx);
 
     uint32_t old_prod_head, cons_tail, new_prod_head;
@@ -34,6 +39,14 @@ int lckfree_queue__push(struct lckfree_queue *q, uint32_t datum) {
     // and the tail to differentiate a full queue from an empty queue
     // so the capacity is also sz-1
     uint32_t capacity = mask;
+
+    // Get a copy. During the CAS loop we will want to change
+    // this a few times and len will be our point of reference
+    uint32_t n = len;
+    if (n == 0) {
+        errno = EINVAL;
+        return 0;
+    }
 
     // Update the old_prod_head reserving one slot for our datum.
     // Keep trying (CAS loop) until we can reserve it
@@ -55,13 +68,20 @@ int lckfree_queue__push(struct lckfree_queue *q, uint32_t datum) {
         cons_tail = __atomic_load_n(&q->cons_tail, __ATOMIC_ACQUIRE);
 
         uint32_t free_entries = (capacity + cons_tail - old_prod_head);
-        if (free_entries == 0) {
-            errno = ENOBUFS;
-            _dbg_mutex_unlock(&q->mx);
-            return -1;
+
+        // the user is happy pushing len or less items so let's
+        // try to push as much as we can
+        if (flags & LCKFREE_SOME) {
+            n = (free_entries < len) ? free_entries : n;
         }
 
-        new_prod_head = (old_prod_head + 1);
+        if (!free_entries || free_entries < n) {
+            errno = ENOBUFS;
+            _dbg_mutex_unlock(&q->mx);
+            return 0;
+        }
+
+        new_prod_head = (old_prod_head + n);
 
     } while (!__atomic_compare_exchange_n(
                 &q->prod_head,          // what we want to update,
@@ -72,12 +92,15 @@ int lckfree_queue__push(struct lckfree_queue *q, uint32_t datum) {
                 __ATOMIC_RELAXED
                 ));
 
-    // slot reserved, we are free to store the datum
+    assert(n > 0 && n <= len);
+
+    // slots reserved, we are free to store the data
     // (old_prod_head is the previous head)
     // See the ACQUIRE-RELEASE semanitcs (see below).
-    // That should ensure that any reader will se our datum
+    // That should ensure that any reader will se our data
     // consistent even if this store is not atomic.
-    q->data[old_prod_head & mask] = datum;
+    for (uint32_t i = 0; i < n; ++i)
+        q->data[(old_prod_head + i) & mask] = data[i];
 
     // Now, we cannot update the prod_tail directly. Imagine
     // that there is another thread that is doing a push too.
@@ -111,10 +134,15 @@ int lckfree_queue__push(struct lckfree_queue *q, uint32_t datum) {
     // will be there in the array.
     __atomic_store_n(&q->prod_tail, new_prod_head, __ATOMIC_RELEASE);
     _dbg_mutex_unlock(&q->mx);
-    return 0;
+    return n;
 }
 
-int lckfree_queue__pop(struct lckfree_queue *q, uint32_t *datum) {
+uint32_t lckfree_queue__pop(
+        struct lckfree_queue *q,
+        uint32_t *data,
+        uint32_t len,
+        int flags
+        ) {
     _dbg_mutex_lock(&q->mx);
     // This pop is a symmetric version of the push. See the comments
     // of it.
@@ -138,6 +166,12 @@ int lckfree_queue__pop(struct lckfree_queue *q, uint32_t *datum) {
     uint32_t old_cons_head, prod_tail, new_cons_head;
     uint32_t mask = q->cons_mask;
 
+    uint32_t n = len;
+    if (n == 0) {
+        errno = EINVAL;
+        return 0;
+    }
+
     do {
         old_cons_head = __atomic_load_n(&q->cons_head, __ATOMIC_RELAXED);
 
@@ -151,20 +185,26 @@ int lckfree_queue__pop(struct lckfree_queue *q, uint32_t *datum) {
         // is well defined for unsigned types and the substraction
         // (a negative value) the same.
         // No "masking" is needed here.
-        uint32_t ready_entries = prod_tail - old_cons_head;
-        assert(ready_entries < mask + 1);
-
+        //
         // This is subtle but important. In the push we compare
         // the producer next head with the consumer tail
         // But in the pop we compare the consumer head (not the
         // consumer next head) with the product tail.
-        if (!ready_entries) {
-            errno = EINVAL;
-            _dbg_mutex_unlock(&q->mx);
-            return -1;
+        uint32_t ready_entries = prod_tail - old_cons_head;
+        assert(ready_entries < mask + 1);
+
+        // Pop as much as we can
+        if (flags & LCKFREE_SOME) {
+            n = (ready_entries < len) ? ready_entries : n;
         }
 
-        new_cons_head = (old_cons_head + 1);
+        if (!ready_entries || ready_entries < n) {
+            errno = EINVAL;
+            _dbg_mutex_unlock(&q->mx);
+            return 0;
+        }
+
+        new_cons_head = (old_cons_head + n);
 
     } while (!__atomic_compare_exchange_n(
                 &q->cons_head,          // what we want to update,
@@ -175,7 +215,9 @@ int lckfree_queue__pop(struct lckfree_queue *q, uint32_t *datum) {
                 __ATOMIC_RELAXED
                 ));
 
-    *datum = q->data[old_cons_head & mask];
+    assert(n > 0 && n <= len);
+    for (uint32_t i = 0; i < n; ++i)
+        data[i] = q->data[(old_cons_head + i) & mask];
 
     while (q->cons_tail != old_cons_head) {
         lckfree_cpu_relax();
@@ -183,7 +225,7 @@ int lckfree_queue__pop(struct lckfree_queue *q, uint32_t *datum) {
 
     __atomic_store_n(&q->cons_tail, new_cons_head, __ATOMIC_RELEASE);
     _dbg_mutex_unlock(&q->mx);
-    return 0;
+    return n;
 }
 
 int lckfree_queue__init(struct lckfree_queue *q, uint32_t sz) {
