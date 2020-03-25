@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 volatile int exit_now = 0;
 
@@ -24,8 +25,9 @@ void* produce(void* arg) {
     uint32_t end = ctx->start_n + ctx->n;
     for (uint32_t i = ctx->start_n; i < end; ++i) {
         //printf("%i\n", i);
-        if (lckfree_queue__push(ctx->q, i))
-            printf("Push failed\n");
+        if (lckfree_queue__push(ctx->q, i)) {
+            printf("PUSH FAILED\n");
+        }
     }
 
     return NULL;
@@ -90,6 +92,7 @@ int main(int argc, char *argv[]) {
 
     // all the iterms were pushed by the producers,
     // when a consumer does a pop and it fails, it must exit
+    usleep(0.01);
     exit_now = 1;
 
     uint32_t sum = 0;

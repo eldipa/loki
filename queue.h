@@ -3,6 +3,25 @@
 
 #include <stdint.h>
 
+#ifdef ENABLE_DEBUG_LOCK
+#include <pthread.h>
+
+#define _dbg_mutex_var(name) pthread_mutex_t name
+#define _dbg_mutex_init(name) pthread_mutex_init((name), NULL)
+#define _dbg_mutex_destroy(name) pthread_mutex_destroy((name))
+#define _dbg_mutex_lock(name) pthread_mutex_lock((name))
+#define _dbg_mutex_unlock(name) pthread_mutex_unlock((name))
+
+#else
+
+#define _dbg_mutex_var(name)
+#define _dbg_mutex_init(name)
+#define _dbg_mutex_destroy(name)
+#define _dbg_mutex_lock(name)
+#define _dbg_mutex_unlock(name)
+
+#endif
+
 //
 // Multi Producer - Multi Consumer Bounded Queue
 //
@@ -63,7 +82,7 @@ struct lckfree_queue {
 
     uint32_t _pad2[13];
 
-    uint32_t count;
+    _dbg_mutex_var(mx);
 
     // Where the data live
     uint32_t *data;
@@ -75,6 +94,6 @@ int lckfree_queue__pop(struct lckfree_queue *q, uint32_t *datum);
 int lckfree_queue__init(struct lckfree_queue *q, uint32_t sz);
 void lckfree_queue__destroy(struct lckfree_queue *q);
 
-uint32_t lckfree_queue__used(struct lckfree_queue *q);
+uint32_t lckfree_queue__ready(struct lckfree_queue *q);
 uint32_t lckfree_queue__free(struct lckfree_queue *q);
 #endif
