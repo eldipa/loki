@@ -1,4 +1,4 @@
-#include "queue.h"
+#include "loki/queue.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -9,7 +9,7 @@ volatile int exit_now = 0;
 
 struct worker_t {
     pthread_t tid;
-    struct lckfree_queue *q;
+    struct loki_queue *q;
 
     // prod only
     uint32_t start_n;
@@ -32,7 +32,7 @@ void* produce(void* arg) {
             block[len] = i + len;
         }
 
-        uint32_t ret = lckfree_queue__push(ctx->q, block, len, LCKFREE_SOME);
+        uint32_t ret = loki_queue__push(ctx->q, block, len, LOKI_SOME);
         if (ret == 0) {
             printf("PUSH FAILED\n");
         }
@@ -49,7 +49,7 @@ void* consume(void* arg) {
 
     while (1) {
         uint32_t block[ctx->pop_len];
-        uint32_t ret = lckfree_queue__pop(ctx->q, block, ctx->pop_len, LCKFREE_SOME);
+        uint32_t ret = loki_queue__pop(ctx->q, block, ctx->pop_len, LOKI_SOME);
         if (ret > 0) {
             for (uint32_t i = 0; i < ret; ++i) {
                 ctx->sum += block[i];
@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
     if (argc != 6)
         return -1;
 
-    struct lckfree_queue q;
+    struct loki_queue q;
     int queue_sz = atoi(argv[1]);
     int prod_cnt = atoi(argv[2]);
     int cons_cnt = atoi(argv[3]);
@@ -82,7 +82,7 @@ int main(int argc, char *argv[]) {
     if (queue_sz % prod_cnt != 0)
         return -3;
 
-    if (lckfree_queue__init(&q, queue_sz))
+    if (loki_queue__init(&q, queue_sz))
         return -4;
 
     struct worker_t producers[prod_cnt];
@@ -124,7 +124,7 @@ int main(int argc, char *argv[]) {
         sum += consumers[i].sum;
     }
 
-    lckfree_queue__destroy(&q);
+    loki_queue__destroy(&q);
 
     uint32_t expected = (queue_sz-1) * (queue_sz / 2);
     if (expected != sum) {

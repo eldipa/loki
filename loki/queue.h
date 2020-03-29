@@ -1,32 +1,10 @@
-#ifndef LCKFREE_QUEUE_H_
-#define LCKFREE_QUEUE_H_
+#ifndef LOKI_QUEUE_H_
+#define LOKI_QUEUE_H_
 
+#include "loki/debug.h"
 #include <stdint.h>
 
-#ifdef ENABLE_DEBUG_LOCK
-#include <pthread.h>
-
-#define _dbg_mutex_var(name) pthread_mutex_t name
-#define _dbg_mutex_init(name) pthread_mutex_init((name), NULL)
-#define _dbg_mutex_destroy(name) pthread_mutex_destroy((name))
-#define _dbg_mutex_lock(name) pthread_mutex_lock((name))
-#define _dbg_mutex_unlock(name) pthread_mutex_unlock((name))
-
-#define _dbg_warn(txt) fprintf(stderr, "%s\n", (txt))
-
-#else
-
-#define _dbg_mutex_var(name)
-#define _dbg_mutex_init(name)
-#define _dbg_mutex_destroy(name)
-#define _dbg_mutex_lock(name)
-#define _dbg_mutex_unlock(name)
-
-#define _dbg_warn(txt)
-
-#endif
-
-#define LCKFREE_SOME 1
+#define LOKI_SOME 1
 
 //
 // Multi Producer - Multi Consumer Bounded Queue
@@ -47,7 +25,7 @@
 //  - https://svnweb.freebsd.org/base/release/8.0.0/sys/sys/buf_ring.h?revision=199625&amp;view=markup
 //  - https://doc.dpdk.org/guides-19.05/prog_guide/ring_lib.html
 //
-struct lckfree_queue {
+struct loki_queue {
     // On push (enqueue), the thread works as a producer:
     //  - it produces a new datum moving the head forward
     //  - and the datum enables the readers (consumers) to read it
@@ -88,28 +66,28 @@ struct lckfree_queue {
 
     uint32_t _pad2[13];
 
-    _dbg_mutex_var(mx);
-
     // Where the data live
     uint32_t *data;
+
+    _dbg_mutex_var(mx);
 };
 
-uint32_t lckfree_queue__push(
-        struct lckfree_queue *q,
+uint32_t loki_queue__push(
+        struct loki_queue *q,
         uint32_t *data,
         uint32_t len,
         int flags
         );
-uint32_t lckfree_queue__pop(
-        struct lckfree_queue *q,
+uint32_t loki_queue__pop(
+        struct loki_queue *q,
         uint32_t *data,
         uint32_t len,
         int flags
         );
 
-int lckfree_queue__init(struct lckfree_queue *q, uint32_t sz);
-void lckfree_queue__destroy(struct lckfree_queue *q);
+int loki_queue__init(struct loki_queue *q, uint32_t sz);
+void loki_queue__destroy(struct loki_queue *q);
 
-uint32_t lckfree_queue__ready(struct lckfree_queue *q);
-uint32_t lckfree_queue__free(struct lckfree_queue *q);
+uint32_t loki_queue__ready(struct loki_queue *q);
+uint32_t loki_queue__free(struct loki_queue *q);
 #endif

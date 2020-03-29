@@ -1,4 +1,4 @@
-#include "queue.h"
+#include "loki/queue.h"
 
 #include <errno.h>
 #include <stdlib.h>
@@ -8,13 +8,15 @@
 
 // XXX assumption: we are running on an intel x86 CPU
 // https://elixir.bootlin.com/linux/v4.5/source/arch/x86/include/asm/processor.h#L560
-static void lckfree_cpu_relax() {
+static void loki_cpu_relax() {
     asm volatile("rep; nop" ::: "memory");
 }
 
 // About memory order
 // https://en.cppreference.com/w/cpp/atomic/memory_order
 // https://gcc.gnu.org/wiki/Atomic/GCCMM/AtomicSync
+// https://fedoraproject.org/wiki/Architectures/ARM/GCCBuiltInAtomicOperations
+// http://stdatomic.gforge.inria.fr/
 //
 // http://git.dpdk.org/dpdk/tree/lib/librte_ring/rte_ring_c11_mem.h
 //
@@ -22,8 +24,8 @@ static void lckfree_cpu_relax() {
 // http://locklessinc.com/articles/locks/
 // https://www.usenix.org/legacy/publications/library/proceedings/als00/2000papers/papers/full_papers/sears/sears_html/index.html
 
-uint32_t lckfree_queue__push(
-        struct lckfree_queue *q,
+uint32_t loki_queue__push(
+        struct loki_queue *q,
         uint32_t *data,
         uint32_t len,
         int flags
@@ -50,15 +52,17 @@ uint32_t lckfree_queue__push(
 
     // Update the old_prod_head reserving one slot for our datum.
     // Keep trying (CAS loop) until we can reserve it
-    do {
-        // Here is where we need prod_head and cons_tail to be
-        // volatile: the compiler must not optimize them so
-        // in each loop we get the freshnest values possible.
-        //
-        // XXX assumption: uint32_t reads (loads) are atomic
-        old_prod_head = __atomic_load_n(&q->prod_head, __ATOMIC_RELAXED);
 
-        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+    // Here is where we need prod_head and cons_tail to be
+    // volatile: the compiler must not optimize them so
+    // in each loop we get the freshnest values possible.
+    //
+    // XXX assumption: uint32_t reads (loads) are atomic
+    //
+    // Note that the CAS instruction will update this
+    // if the instruction fails
+    old_prod_head = q->prod_head;
+    do {
 
         // Here we load the consumer tail with ACQUIRE.
         // This ensures that the reads (loads) that happened
@@ -71,7 +75,7 @@ uint32_t lckfree_queue__push(
 
         // the user is happy pushing len or less items so let's
         // try to push as much as we can
-        if (flags & LCKFREE_SOME) {
+        if (flags & LOKI_SOME) {
             n = (free_entries < len) ? free_entries : n;
         }
 
@@ -112,7 +116,7 @@ uint32_t lckfree_queue__push(
     // that started before us and are still pushing finish.
     while (q->prod_tail != old_prod_head) {
         // Tell the CPU that this is busy-loop so he can take a rest
-        lckfree_cpu_relax();
+        loki_cpu_relax();
     }
 
     // Okay, it is our turns now, update the prod_tail
@@ -137,8 +141,8 @@ uint32_t lckfree_queue__push(
     return n;
 }
 
-uint32_t lckfree_queue__pop(
-        struct lckfree_queue *q,
+uint32_t loki_queue__pop(
+        struct loki_queue *q,
         uint32_t *data,
         uint32_t len,
         int flags
@@ -173,9 +177,7 @@ uint32_t lckfree_queue__pop(
     }
 
     do {
-        old_cons_head = __atomic_load_n(&q->cons_head, __ATOMIC_RELAXED);
-
-        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        old_cons_head = q->cons_head;
 
         prod_tail = __atomic_load_n(&q->prod_tail, __ATOMIC_ACQUIRE);
 
@@ -194,7 +196,7 @@ uint32_t lckfree_queue__pop(
         assert(ready_entries < mask + 1);
 
         // Pop as much as we can
-        if (flags & LCKFREE_SOME) {
+        if (flags & LOKI_SOME) {
             n = (ready_entries < len) ? ready_entries : n;
         }
 
@@ -220,7 +222,7 @@ uint32_t lckfree_queue__pop(
         data[i] = q->data[(old_cons_head + i) & mask];
 
     while (q->cons_tail != old_cons_head) {
-        lckfree_cpu_relax();
+        loki_cpu_relax();
     }
 
     __atomic_store_n(&q->cons_tail, new_cons_head, __ATOMIC_RELEASE);
@@ -228,7 +230,7 @@ uint32_t lckfree_queue__pop(
     return n;
 }
 
-int lckfree_queue__init(struct lckfree_queue *q, uint32_t sz) {
+int loki_queue__init(struct loki_queue *q, uint32_t sz) {
     // Power of 2 only
     if (!sz || (sz & (sz-1))) {
         errno = EINVAL;
@@ -248,16 +250,16 @@ int lckfree_queue__init(struct lckfree_queue *q, uint32_t sz) {
     return 0;
 }
 
-void lckfree_queue__destroy(struct lckfree_queue *q) {
+void loki_queue__destroy(struct loki_queue *q) {
     _dbg_mutex_destroy(&q->mx);
     free(q->data);
 }
 
-uint32_t lckfree_queue__ready(struct lckfree_queue *q) {
+uint32_t loki_queue__ready(struct loki_queue *q) {
     return q->prod_tail - q->cons_head;
 }
 
-uint32_t lckfree_queue__free(struct lckfree_queue *q) {
+uint32_t loki_queue__free(struct loki_queue *q) {
     uint32_t capacity = q->prod_mask;
     return (capacity - q->cons_tail - q->prod_head);
 }
