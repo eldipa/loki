@@ -15,10 +15,12 @@ struct worker_t {
     uint32_t start_n;
     uint32_t n;
     uint32_t push_len;
+    int single_producer;
 
     // cons only
     uint32_t sum;
     uint32_t pop_len;
+    int single_consumer;
 };
 
 void* produce(void* arg) {
@@ -26,13 +28,18 @@ void* produce(void* arg) {
 
     uint32_t end = ctx->start_n + ctx->n;
     uint32_t block[ctx->push_len];
+
+    int flags = LOKI_SOME_DATA;
+    if (ctx->single_producer)
+        flags |= LOKI_SINGLE;
+
     for (uint32_t i = ctx->start_n; i < end;) {
         uint32_t len = 0;
         for (; len < ctx->push_len && len+i < end; ++len) {
             block[len] = i + len;
         }
 
-        uint32_t ret = loki_queue__push(ctx->q, block, len, LOKI_SOME);
+        uint32_t ret = loki_queue__push(ctx->q, block, len, flags);
         if (ret == 0) {
             printf("PUSH FAILED\n");
         }
@@ -47,9 +54,13 @@ void* produce(void* arg) {
 void* consume(void* arg) {
     struct worker_t *ctx = arg;
 
+    int flags = LOKI_SOME_DATA;
+    if (ctx->single_producer)
+        flags |= LOKI_SINGLE;
+
     while (1) {
         uint32_t block[ctx->pop_len];
-        uint32_t ret = loki_queue__pop(ctx->q, block, ctx->pop_len, LOKI_SOME);
+        uint32_t ret = loki_queue__pop(ctx->q, block, ctx->pop_len, flags);
         if (ret > 0) {
             for (uint32_t i = 0; i < ret; ++i) {
                 ctx->sum += block[i];
@@ -93,6 +104,7 @@ int main(int argc, char *argv[]) {
         producers[i].start_n = i * (queue_sz / prod_cnt) + ((i==0) ? 1 : 0);
         producers[i].n = (queue_sz / prod_cnt) - ((i==0) ? 1 : 0);
         producers[i].push_len = push_len;
+        producers[i].single_producer = (prod_cnt == 1);
 
         printf("Producer n=%u starting from %u, block of len %u\n",
                 producers[i].n , producers[i].start_n, producers[i].push_len);
@@ -104,6 +116,7 @@ int main(int argc, char *argv[]) {
         consumers[i].q = &q;
         consumers[i].sum = 0;
         consumers[i].pop_len = pop_len;
+        producers[i].single_consumer = (cons_cnt == 1);
 
         printf("Consumer, block of len %u\n", consumers[i].pop_len);
         pthread_create(&(consumers[i].tid), NULL, consume, &consumers[i]);

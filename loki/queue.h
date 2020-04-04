@@ -4,7 +4,8 @@
 #include "loki/debug.h"
 #include <stdint.h>
 
-#define LOKI_SOME 1
+#define LOKI_SOME_DATA 1
+#define LOKI_SINGLE    2
 
 //
 // Multi Producer - Multi Consumer Bounded Queue
