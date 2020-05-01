@@ -55,7 +55,7 @@ void* consume(void* arg) {
     struct worker_t *ctx = arg;
 
     int flags = LOKI_SOME_DATA;
-    if (ctx->single_producer)
+    if (ctx->single_consumer)
         flags |= LOKI_SINGLE;
 
     while (1) {
@@ -109,6 +109,9 @@ int main(int argc, char *argv[]) {
         printf("Producer n=%u starting from %u, block of len %u\n",
                 producers[i].n , producers[i].start_n, producers[i].push_len);
 
+        if (producers[i].single_producer)
+            printf("Single producer\n");
+
         pthread_create(&(producers[i].tid), NULL, produce, &producers[i]);
     }
 
@@ -116,25 +119,34 @@ int main(int argc, char *argv[]) {
         consumers[i].q = &q;
         consumers[i].sum = 0;
         consumers[i].pop_len = pop_len;
-        producers[i].single_consumer = (cons_cnt == 1);
+        consumers[i].single_consumer = (cons_cnt == 1);
 
         printf("Consumer, block of len %u\n", consumers[i].pop_len);
+
+        if (consumers[i].single_consumer)
+            printf("Single consumer\n");
+
         pthread_create(&(consumers[i].tid), NULL, consume, &consumers[i]);
     }
 
+    printf("Waiting for the producers\n");
     for (int i = 0; i < prod_cnt; ++i) {
         pthread_join(producers[i].tid, NULL);
+        printf("Producer %i done\n", i);
     }
 
     // all the iterms were pushed by the producers,
     // when a consumer does a pop and it fails, it must exit
     usleep(0.01);
+    printf("Signal the consumers to exit\n");
     exit_now = 1;
 
+    printf("Waiting for the consumers\n");
     uint32_t sum = 0;
     for (int i = 0; i < cons_cnt; ++i) {
         pthread_join(consumers[i].tid, NULL);
         sum += consumers[i].sum;
+        printf("Consumer %i done\n", i);
     }
 
     loki_queue__destroy(&q);
@@ -145,5 +157,6 @@ int main(int argc, char *argv[]) {
         return -5;
     }
 
+    printf("OK\n");
     return 0;
 }
