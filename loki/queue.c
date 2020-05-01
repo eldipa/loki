@@ -1,5 +1,5 @@
 #include "loki/queue.h"
-#include "loki/lock.h"
+#include "loki/common.h"
 
 #include <errno.h>
 #include <stdlib.h>
