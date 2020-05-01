@@ -1,6 +1,21 @@
 
+# Turn on/off debug mode (off by default).
+#
+# Debug mode disables compiler optimizations,
+# adds debugging metadata and enables the use of mutexes.
+DEBUG =
+
+# Turn on/off the sanitization mode. (off by default).
+# This modes relays in the compiler's
+# ability to instrument the code to detect race conditions in runtime.
+# It makes the program between 5 and 15 times slower (and consumes around
+# 15 times more memory)
+# Makes sense to use this only for testing and with DEBUG turned off.
+SANITIZE =
+
 CC = gcc
 CFLAGS = -std=gnu11 -march=core2
+LDFLAGS =
 LDLIBS = -lpthread
 INCLUDES = -I.
 
@@ -14,5 +29,10 @@ else
 	CFLAGS += -O2
 endif
 
+ifeq (1,$(SANITIZE))
+	CFLAGS += -fsanitize=thread
+	LDFLAGS += -fsanitize=thread
+endif
+
 queue-test: loki/*.c loki/*.h tests/queue-test.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ loki/*.c tests/queue-test.c $(LDLIBS)
+	$(CC) $(INCLUDES) $(CFLAGS) $(LDFLAGS) -o $@ loki/*.c tests/queue-test.c $(LDLIBS)
