@@ -77,7 +77,7 @@ uint32_t loki_queue__push(
         }
 
         if (!free_entries || free_entries < n) {
-            errno = ENOBUFS;
+            errno = EAGAIN;
             _dbg_mutex_unlock(&q->mx);
             return 0;
         }
@@ -210,7 +210,7 @@ uint32_t loki_queue__pop(
         }
 
         if (!ready_entries || ready_entries < n) {
-            errno = EINVAL;
+            errno = EAGAIN;
             _dbg_mutex_unlock(&q->mx);
             return 0;
         }
