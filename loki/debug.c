@@ -4,6 +4,7 @@
 
 #ifdef LOKI_ENABLE_TRACE
 
+const uint32_t _dbg_trace_mask = _LOKI_TRACE_BUF_MASK;
 uint32_t _dbg_trace_pos = 0;
 struct _dbg_trace_entry_t _dbg_trace_buf[_LOKI_TRACE_ENTRY_CNT] = {0};
 
@@ -20,10 +21,11 @@ int  _dbg_trace_dump() {
 
     for (uint32_t i = 0; i < _LOKI_TRACE_ENTRY_CNT; ++i) {
         struct _dbg_trace_entry_t cur = _dbg_trace_buf[i];
-        fprintf(f, "%08x %08x %s\n", cur.seq, cur.id, cur.msg);
+        fprintf(f, "%08x %08x %s\n", cur.seq, cur.id,
+                (cur.ptr_msg == NULL) ? cur.msg : cur.ptr_msg);
     }
-
     fclose(f);
+    return 0;
 }
 
 #endif

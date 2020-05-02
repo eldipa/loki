@@ -76,7 +76,7 @@ uint32_t loki_queue__push(
             n = (free_entries < len) ? free_entries : n;
         }
 
-        _dbg_trace("push cas n=%u free=%u q->cons_tail=%u (old)q->prod_head=%u",
+        _dbg_tracef("push cas n=%u free=%u q->cons_tail=%u (old)q->prod_head=%u",
                 n, free_entries, cons_tail, old_prod_head);
 
         if (!free_entries || free_entries < n) {
@@ -122,7 +122,7 @@ uint32_t loki_queue__push(
     //
     // For this reason ww need to loop until all the threads
     // that started before us and are still pushing finish.
-    _dbg_trace("push loop q->prod_tail=%u (old)prod_head=%u, (new)prod_head=%u",
+    _dbg_tracef("push loop q->prod_tail=%u (old)prod_head=%u, (new)prod_head=%u",
             q->prod_tail, old_prod_head, new_prod_head);
     while (q->prod_tail != old_prod_head) {
         // Tell the CPU that this is busy-loop so he can take a rest
@@ -148,7 +148,7 @@ uint32_t loki_queue__push(
     // So, if C does __atomic_load_n(&q->prod_tail, __ATOMIC_ACQUIRE) and
     // it gets our new_prod_head, then from her point of view, the data
     // will be there in the array.
-    _dbg_trace("push release q->prod_tail=%u (new)prod_head=%u",
+    _dbg_tracef("push release q->prod_tail=%u (new)prod_head=%u",
             q->prod_tail, new_prod_head);
     __atomic_store_n(&q->prod_tail, new_prod_head, __ATOMIC_RELEASE);
     _dbg_mutex_unlock(&q->mx);
@@ -217,7 +217,7 @@ uint32_t loki_queue__pop(
             n = (ready_entries < len) ? ready_entries : n;
         }
 
-        _dbg_trace("pop cas n=%u ready=%u q->prod_tail=%u (old)q->cons_head=%u",
+        _dbg_tracef("pop cas n=%u ready=%u q->prod_tail=%u (old)q->cons_head=%u",
                 n, ready_entries, prod_tail, old_cons_head);
 
         if (!ready_entries || ready_entries < n) {
@@ -247,14 +247,14 @@ uint32_t loki_queue__pop(
     for (uint32_t i = 0; i < n; ++i)
         data[i] = q->data[(old_cons_head + i) & mask];
 
-    _dbg_trace("pop loop q->cons_tail=%u (old)cons_head=%u, (new)cons_head=%u",
+    _dbg_tracef("pop loop q->cons_tail=%u (old)cons_head=%u, (new)cons_head=%u",
             q->cons_tail, old_cons_head, new_cons_head);
 
     while (q->cons_tail != old_cons_head) {
         loki_cpu_relax();
     }
 
-    _dbg_trace("pop release q->cons_tail=%u (new)cons_head=%u",
+    _dbg_tracef("pop release q->cons_tail=%u (new)cons_head=%u",
             q->cons_tail, new_cons_head);
     __atomic_store_n(&q->cons_tail, new_cons_head, __ATOMIC_RELEASE);
     _dbg_mutex_unlock(&q->mx);

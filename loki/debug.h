@@ -58,14 +58,16 @@ static_assert(
     "Trace entry count must be power of 2"
     );
 
-#define _LOKI_TRACE_MSG_SZ (LOKI_TRACE_ENTRY_SZ-8)
+#define _LOKI_TRACE_MSG_SZ (LOKI_TRACE_ENTRY_SZ-8-sizeof(char*))
 struct _dbg_trace_entry_t {
     uint32_t id;
     uint32_t seq;
+    const char *ptr_msg;
     char msg[_LOKI_TRACE_MSG_SZ];
 } __attribute__ ((packed));
 
 
+extern const uint32_t _dbg_trace_mask;
 extern uint32_t _dbg_trace_pos;
 extern struct _dbg_trace_entry_t _dbg_trace_buf[_LOKI_TRACE_ENTRY_CNT];
 
@@ -76,13 +78,24 @@ extern struct _dbg_trace_entry_t _dbg_trace_buf[_LOKI_TRACE_ENTRY_CNT];
 // Not matter if we are at the end of the buffer, we'll have
 // always space enough to write a full entry (the buffer is
 // larger than you think)
-#define _dbg_trace(fmt, ...)  do {                                            \
+#define _dbg_tracef(fmt, ...)  do {                                           \
     uint32_t seq = __atomic_fetch_add(&_dbg_trace_pos, 1, __ATOMIC_RELAXED);  \
     uint32_t pos = seq & _LOKI_TRACE_BUF_MASK;                                \
                                                                               \
     _dbg_trace_buf[pos].id = loki_thread_id();                                \
     _dbg_trace_buf[pos].seq = seq;                                            \
+    _dbg_trace_buf[pos].ptr_msg = NULL;                                       \
     snprintf(_dbg_trace_buf[pos].msg, _LOKI_TRACE_MSG_SZ, fmt, __VA_ARGS__);  \
+} while (0)
+
+#define _dbg_trace(msg)  do {                                                 \
+    uint32_t seq = __atomic_fetch_add(&_dbg_trace_pos, 1, __ATOMIC_RELAXED);  \
+    uint32_t pos = seq & _LOKI_TRACE_BUF_MASK;                                \
+                                                                              \
+    _dbg_trace_buf[pos].id = loki_thread_id();                                \
+    _dbg_trace_buf[pos].seq = seq;                                            \
+    _dbg_trace_buf[pos].ptr_msg = msg;                                        \
+    _dbg_trace_buf[pos].msg[0] = 0;                                           \
 } while (0)
 
 uint32_t _dbg_trace_last_entry_at() __attribute__((used));
