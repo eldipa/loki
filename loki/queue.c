@@ -42,6 +42,7 @@ uint32_t loki_queue__push(
     // this a few times and len will be our point of reference
     uint32_t n = len;
     if (n == 0) {
+        _dbg_mutex_unlock(&q->mx);
         errno = EINVAL;
         return 0;
     }
@@ -80,8 +81,8 @@ uint32_t loki_queue__push(
                 n, free_entries, cons_tail, old_prod_head);
 
         if (!free_entries || free_entries < n) {
-            errno = EAGAIN;
             _dbg_mutex_unlock(&q->mx);
+            errno = EAGAIN;
             return 0;
         }
 
@@ -189,6 +190,7 @@ uint32_t loki_queue__pop(
 
     uint32_t n = len;
     if (n == 0) {
+        _dbg_mutex_unlock(&q->mx);
         errno = EINVAL;
         return 0;
     }
@@ -221,8 +223,8 @@ uint32_t loki_queue__pop(
                 n, ready_entries, prod_tail, old_cons_head);
 
         if (!ready_entries || ready_entries < n) {
-            errno = EAGAIN;
             _dbg_mutex_unlock(&q->mx);
+            errno = EAGAIN;
             return 0;
         }
 
