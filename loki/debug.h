@@ -103,6 +103,7 @@ int  _dbg_trace_dump() __attribute__((used));
 
 #else   // else of LOKI_ENABLE_TRACE
 
+#define _dbg_tracef(fmt, ...)
 #define _dbg_trace(fmt, ...)
 
 #endif  // else of LOKI_ENABLE_TRACE
