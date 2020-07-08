@@ -56,8 +56,21 @@ ifeq (1,$(SANITIZE))
 	LDFLAGS += -fsanitize=thread
 endif
 
-queue-test: loki/*.c loki/*.h tests/queue-test.c
-	$(CC) $(INCLUDES) $(CFLAGS) $(LDFLAGS) -o $@ loki/*.c tests/queue-test.c $(LDLIBS)
+HDRS = $(wildcard loki/*.h)
+
+SRCS = $(wildcard loki/*.c)
+OBJS = $(SRCS:.c=.o)
+
+TESTSRCS = $(wildcard tests/*.c)
+TESTS = $(TESTSRCS:.c=.test)
+
+all: $(OBJS) $(TESTS)
+
+%.o: %.c $(HDRS)
+	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c $<
+
+%.test: %.c $(OBJS) $(HDRS)
+	$(CC) $(INCLUDES) $(CFLAGS) $(LDFLAGS) -o $@ $< $(OBJS) $(LDLIBS)
 
 clean:
-	rm -f queue-test
+	rm -f test/queue-test loki/*.o
