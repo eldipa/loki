@@ -39,16 +39,6 @@ uint32_t loki_queue__push(
     // so the capacity is also sz-1
     uint32_t capacity = mask;
 
-    // Get a copy. During the CAS loop we will want to change
-    // this a few times and len will be our point of reference
-    uint32_t n = len;
-    if (n == 0) {
-        _dbg_mutex_unlock(&q->mx);
-        /* *free_entries_remain = undefined */
-        errno = EINVAL;
-        return 0;
-    }
-
     // Note that the CAS instruction will update this atomically
     // if the CAS instruction fails.
     // So we need to load this explicitly once. Because
@@ -61,8 +51,13 @@ uint32_t loki_queue__push(
 
     // Update the old_prod_head reserving enough entries for our data.
     // Keep trying (CAS loop) until we success
-    uint32_t free_entries;
+    uint32_t free_entries, n;
     do {
+
+        // Try to push always all the data in each iteration
+        n = len;
+
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
 
         // Here we load the consumer tail with ACQUIRE.
         // This ensures that the reads (loads) that happened
@@ -76,14 +71,14 @@ uint32_t loki_queue__push(
 
         // the user is happy pushing len or less items so let's
         // try to push as much as we can
-        if (flags & LOKI_SOME_DATA) {
-            n = (free_entries < len) ? free_entries : n;
+        if ((flags & LOKI_SOME_DATA) && (free_entries < len))  {
+            n = free_entries;
         }
 
         _dbg_tracef("push cas n=%u free=%u q->cons_tail=%u (old)q->prod_head=%u",
                 n, free_entries, cons_tail, old_prod_head);
 
-        if (!free_entries || free_entries < n) {
+        if (!free_entries || !n || free_entries < n) {
             _dbg_mutex_unlock(&q->mx);
             if (free_entries_remain)
                 *free_entries_remain = free_entries;
@@ -199,17 +194,13 @@ uint32_t loki_queue__pop(
     uint32_t mask = q->cons_mask;
     int success;
 
-    uint32_t n = len;
-    if (n == 0) {
-        _dbg_mutex_unlock(&q->mx);
-        /* *ready_entries_remain = undefined */
-        errno = EINVAL;
-        return 0;
-    }
-
     old_cons_head = __atomic_load_n(&q->cons_head, __ATOMIC_RELAXED);
-    uint32_t ready_entries;
+    uint32_t ready_entries, n;
     do {
+        n = len;
+
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+
         prod_tail = __atomic_load_n(&q->prod_tail, __ATOMIC_ACQUIRE);
 
         // We know that the prod's tail is always in front of the
@@ -228,14 +219,14 @@ uint32_t loki_queue__pop(
         assert(ready_entries < mask + 1);
 
         // Pop as much as we can
-        if (flags & LOKI_SOME_DATA) {
-            n = (ready_entries < len) ? ready_entries : n;
+        if ((flags & LOKI_SOME_DATA) && (ready_entries < len)) {
+            n = ready_entries;
         }
 
         _dbg_tracef("pop cas n=%u ready=%u q->prod_tail=%u (old)q->cons_head=%u",
                 n, ready_entries, prod_tail, old_cons_head);
 
-        if (!ready_entries || ready_entries < n) {
+        if (!ready_entries || !n || ready_entries < n) {
             _dbg_mutex_unlock(&q->mx);
             if (ready_entries_remain)
                 *ready_entries_remain = ready_entries;
