@@ -77,13 +77,15 @@ uint32_t loki_queue__push(
         struct loki_queue *q,
         uint32_t *data,
         uint32_t len,
-        int flags
+        int flags,
+        uint32_t *free_entries_remain
         );
 uint32_t loki_queue__pop(
         struct loki_queue *q,
         uint32_t *data,
         uint32_t len,
-        int flags
+        int flags,
+        uint32_t *ready_entries_remain
         );
 
 int loki_queue__init(struct loki_queue *q, uint32_t sz);

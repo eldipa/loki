@@ -39,7 +39,7 @@ void* produce(void* arg) {
             block[len] = i + len;
         }
 
-        uint32_t ret = loki_queue__push(ctx->q, block, len, flags);
+        uint32_t ret = loki_queue__push(ctx->q, block, len, flags, NULL);
         if (ret == 0) {
             printf("PUSH FAILED\n");
         }
@@ -60,7 +60,7 @@ void* consume(void* arg) {
 
     while (1) {
         uint32_t block[ctx->pop_len];
-        uint32_t ret = loki_queue__pop(ctx->q, block, ctx->pop_len, flags);
+        uint32_t ret = loki_queue__pop(ctx->q, block, ctx->pop_len, flags, NULL);
         if (ret > 0) {
             for (uint32_t i = 0; i < ret; ++i) {
                 ctx->sum += block[i];

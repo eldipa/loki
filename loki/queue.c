@@ -23,7 +23,8 @@ uint32_t loki_queue__push(
         struct loki_queue *q,
         uint32_t *data,
         uint32_t len,
-        int flags
+        int flags,
+        uint32_t *free_entries_remain
         ) {
     _dbg_mutex_lock(&q->mx);
 
@@ -43,6 +44,7 @@ uint32_t loki_queue__push(
     uint32_t n = len;
     if (n == 0) {
         _dbg_mutex_unlock(&q->mx);
+        /* *free_entries_remain = undefined */
         errno = EINVAL;
         return 0;
     }
@@ -59,6 +61,7 @@ uint32_t loki_queue__push(
 
     // Update the old_prod_head reserving enough entries for our data.
     // Keep trying (CAS loop) until we success
+    uint32_t free_entries;
     do {
 
         // Here we load the consumer tail with ACQUIRE.
@@ -69,7 +72,7 @@ uint32_t loki_queue__push(
         // This is complemented with the RELEASE store in the pop()
         cons_tail = __atomic_load_n(&q->cons_tail, __ATOMIC_ACQUIRE);
 
-        uint32_t free_entries = (capacity + cons_tail - old_prod_head);
+        free_entries = (capacity + cons_tail - old_prod_head);
 
         // the user is happy pushing len or less items so let's
         // try to push as much as we can
@@ -82,6 +85,8 @@ uint32_t loki_queue__push(
 
         if (!free_entries || free_entries < n) {
             _dbg_mutex_unlock(&q->mx);
+            if (free_entries_remain)
+                *free_entries_remain = free_entries;
             errno = EAGAIN;
             return 0;
         }
@@ -105,6 +110,7 @@ uint32_t loki_queue__push(
 
     assert(n <= capacity + __atomic_load_n(&q->cons_tail, __ATOMIC_RELAXED) - old_prod_head);
     assert(n > 0 && n <= len);
+    assert(free_entries >= n);
 
     // slots reserved, we are free to store the data
     // (old_prod_head is the previous head)
@@ -153,6 +159,10 @@ uint32_t loki_queue__push(
             q->prod_tail, new_prod_head);
     __atomic_store_n(&q->prod_tail, new_prod_head, __ATOMIC_RELEASE);
     _dbg_mutex_unlock(&q->mx);
+
+    // Update the external free entries count if it was provided
+    if (free_entries_remain)
+        *free_entries_remain = free_entries - n;
     return n;
 }
 
@@ -160,7 +170,8 @@ uint32_t loki_queue__pop(
         struct loki_queue *q,
         uint32_t *data,
         uint32_t len,
-        int flags
+        int flags,
+        uint32_t *ready_entries_remain
         ) {
     _dbg_mutex_lock(&q->mx);
     // This pop is a symmetric version of the push. See the comments
@@ -191,11 +202,13 @@ uint32_t loki_queue__pop(
     uint32_t n = len;
     if (n == 0) {
         _dbg_mutex_unlock(&q->mx);
+        /* *ready_entries_remain = undefined */
         errno = EINVAL;
         return 0;
     }
 
     old_cons_head = __atomic_load_n(&q->cons_head, __ATOMIC_RELAXED);
+    uint32_t ready_entries;
     do {
         prod_tail = __atomic_load_n(&q->prod_tail, __ATOMIC_ACQUIRE);
 
@@ -211,7 +224,7 @@ uint32_t loki_queue__pop(
         // the producer next head with the consumer tail
         // But in the pop we compare the consumer head (not the
         // consumer next head) with the product tail.
-        uint32_t ready_entries = prod_tail - old_cons_head;
+        ready_entries = prod_tail - old_cons_head;
         assert(ready_entries < mask + 1);
 
         // Pop as much as we can
@@ -224,6 +237,8 @@ uint32_t loki_queue__pop(
 
         if (!ready_entries || ready_entries < n) {
             _dbg_mutex_unlock(&q->mx);
+            if (ready_entries_remain)
+                *ready_entries_remain = ready_entries;
             errno = EAGAIN;
             return 0;
         }
@@ -246,6 +261,7 @@ uint32_t loki_queue__pop(
 
     assert(n <= __atomic_load_n(&q->prod_tail, __ATOMIC_RELAXED) - old_cons_head);
     assert(n > 0 && n <= len);
+    assert(ready_entries >= n);
     for (uint32_t i = 0; i < n; ++i)
         data[i] = q->data[(old_cons_head + i) & mask];
 
@@ -260,6 +276,8 @@ uint32_t loki_queue__pop(
             q->cons_tail, new_cons_head);
     __atomic_store_n(&q->cons_tail, new_cons_head, __ATOMIC_RELEASE);
     _dbg_mutex_unlock(&q->mx);
+    if (ready_entries_remain)
+        *ready_entries_remain = ready_entries - n;
     return n;
 }
 
