@@ -68,27 +68,29 @@ struct loki_queue {
     uint32_t _pad2[13];
 
     // Where the data live
-    uint32_t *data;
+    uint8_t *data;
+    // Size of the element that the loki will hold
+    uint32_t elem_sz;
 
     _dbg_mutex_var(mx);
 };
 
 uint32_t loki_queue__push(
         struct loki_queue *q,
-        uint32_t *data,
+        void *data,
         uint32_t len,
         int flags,
         uint32_t *free_entries_remain
         );
 uint32_t loki_queue__pop(
         struct loki_queue *q,
-        uint32_t *data,
+        void *data,
         uint32_t len,
         int flags,
         uint32_t *ready_entries_remain
         );
 
-int loki_queue__init(struct loki_queue *q, uint32_t sz);
+int loki_queue__init(struct loki_queue *q, uint32_t sz, uint32_t elem_sz);
 void loki_queue__destroy(struct loki_queue *q);
 
 uint32_t loki_queue__ready(struct loki_queue *q);

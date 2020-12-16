@@ -76,8 +76,10 @@ void* consume(void* arg) {
 
 int main(int argc, char *argv[]) {
     _dbg_warn("Mutex enabled!");
-    if (argc != 6)
+    if (argc != 6) {
+        fprintf(stderr, "Usage: %s <queue-size> <producer-count> <consumer-count> <push-len> <pop-len>\n", argv[0]);
         return -1;
+    }
 
     struct loki_queue q;
     int queue_sz = atoi(argv[1]);
@@ -93,7 +95,7 @@ int main(int argc, char *argv[]) {
     if (queue_sz % prod_cnt != 0)
         return -3;
 
-    if (loki_queue__init(&q, queue_sz))
+    if (loki_queue__init(&q, queue_sz, sizeof(uint32_t)))
         return -4;
 
     struct worker_t producers[prod_cnt];
