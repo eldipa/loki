@@ -3,6 +3,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
 
 #include <assert.h>
@@ -21,7 +22,7 @@
 
 uint32_t loki_queue__push(
         struct loki_queue *q,
-        uint32_t *data,
+        void *data,
         uint32_t len,
         int flags,
         uint32_t *free_entries_remain
@@ -112,8 +113,9 @@ uint32_t loki_queue__push(
     // See the ACQUIRE-RELEASE semanitcs (see below).
     // That should ensure that any reader will see our data
     // after she acquire her tail even if thos store is not atomic.
+    uint8_t *_data = data;
     for (uint32_t i = 0; i < n; ++i)
-        q->data[(old_prod_head + i) & mask] = data[i];
+        memcpy(&q->data[((old_prod_head + i) & mask) * q->elem_sz], &_data[i * q->elem_sz], q->elem_sz);
 
     // Now, we cannot update the prod_tail directly. Imagine
     // that there is another thread that is doing a push too.
@@ -163,7 +165,7 @@ uint32_t loki_queue__push(
 
 uint32_t loki_queue__pop(
         struct loki_queue *q,
-        uint32_t *data,
+        void *data,
         uint32_t len,
         int flags,
         uint32_t *ready_entries_remain
@@ -253,8 +255,9 @@ uint32_t loki_queue__pop(
     assert(n <= __atomic_load_n(&q->prod_tail, __ATOMIC_RELAXED) - old_cons_head);
     assert(n > 0 && n <= len);
     assert(ready_entries >= n);
+    uint8_t *_data = data;
     for (uint32_t i = 0; i < n; ++i)
-        data[i] = q->data[(old_cons_head + i) & mask];
+        memcpy(&_data[i * q->elem_sz], &q->data[((old_cons_head + i) & mask) * q->elem_sz], q->elem_sz);
 
     _dbg_tracef("pop loop q->cons_tail=%u (old)cons_head=%u, (new)cons_head=%u",
             q->cons_tail, old_cons_head, new_cons_head);
@@ -272,7 +275,7 @@ uint32_t loki_queue__pop(
     return n;
 }
 
-int loki_queue__init(struct loki_queue *q, uint32_t sz) {
+int loki_queue__init(struct loki_queue *q, uint32_t sz, uint32_t elem_sz) {
     // Power of 2 only
     if (!sz || (sz & (sz-1))) {
         errno = EINVAL;
@@ -281,10 +284,11 @@ int loki_queue__init(struct loki_queue *q, uint32_t sz) {
 
     q->prod_mask = q->cons_mask = (sz-1);
 
-    q->data = malloc(sizeof(*q->data) * sz);
+    q->data = malloc(elem_sz * sz );
     if (!q->data)
         return -1;
 
+    q->elem_sz = elem_sz;
     q->prod_tail = q->prod_head = 0;
     q->cons_tail = q->cons_head = 0;
 
